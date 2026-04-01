@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Noto+Serif+SC:wght@200;300;400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-bg-deep: var(--bg-deep);
+  --color-bg-card: var(--bg-card);
+  --color-accent-sage: var(--accent-sage);
+  --color-accent-rose: var(--accent-rose);
+  --color-accent-blue: var(--accent-blue);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --font-serif: "Noto Serif SC", serif;
+}
+
+:root {
+  /* Light Mode (Original) */
+  --bg-deep: #E2DCD5;
+  --bg-card: #F2EFEA;
+  --accent-sage: #A3B18A;
+  --accent-rose: #D4A373;
+  --accent-blue: #9BB1BB;
+  --text-main: #4A4A4A;
+  --text-muted: #8C8C8C;
+  
+  background-color: var(--bg-deep);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, sans-serif;
+  transition: background-color 0.8s ease, color 0.8s ease;
+}
+
+:root.dark {
+  /* Dark Mode (Night Mode) */
+  --bg-deep: #0B1E3A;
+  --bg-card: #1C1C1E;
+  --accent-sage: #A3B18A;
+  --accent-rose: #D4A373;
+  --accent-blue: #2C3E50;
+  --text-main: #D4A373;
+  --text-muted: #8C8C8C;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+.glass {
+  background: var(--bg-card);
+  opacity: 0.8;
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(212, 163, 115, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+:root.dark .glass {
+  background: rgba(28, 28, 30, 0.6);
+  border: 1px solid rgba(212, 163, 115, 0.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.soft-shadow {
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
