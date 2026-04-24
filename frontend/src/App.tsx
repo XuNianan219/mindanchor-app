@@ -3,11 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-<<<<<<< HEAD
 import React, { useState, useEffect, useRef } from 'react';
-=======
-import React, { useState, useEffect } from 'react';
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, 
@@ -32,78 +28,11 @@ import {
   CloudRain
 } from 'lucide-react';
 
-<<<<<<< HEAD
 // --- Types ---
 type AppState = 'home' | 'emergency' | 'sleep' | 'health';
 
 
 // --- Components ---
-=======
-import { GoogleGenAI, Modality } from "@google/genai";
-
-// --- Types ---
-type AppState = 'home' | 'emergency' | 'sleep' | 'health';
-
-// --- Services ---
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-const playTTS = async (text: string) => {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `用极其温柔、缓慢、低沉且催眠的声音说：${text}` }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Soft female voice
-          },
-        },
-      },
-    });
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      // The TTS model returns raw PCM data (16-bit, 24kHz)
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-
-      const binaryString = atob(base64Audio);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      // Convert 16-bit PCM to Float32
-      const pcmData = new Int16Array(bytes.buffer);
-      const float32Data = new Float32Array(pcmData.length);
-      for (let i = 0; i < pcmData.length; i++) {
-        float32Data[i] = pcmData[i] / 32768.0;
-      }
-
-      const audioBuffer = audioContext.createBuffer(1, float32Data.length, 24000);
-      audioBuffer.getChannelData(0).set(float32Data);
-
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      source.onended = () => {
-        audioContext.close();
-      };
-      source.start();
-    }
-  } catch (error) {
-    console.error("TTS Error:", error);
-  }
-};
-
-// --- Components ---
-
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
 const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
 
@@ -119,24 +48,17 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
     <div className="flex flex-col items-center justify-center space-y-8 sm:space-y-10">
       <div className="relative flex items-center justify-center">
         {/* Outer Glow */}
-<<<<<<< HEAD
         {/* 修复：移除 Y 轴位移，圆形只做原地 scale */}
-=======
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
         <motion.div
           animate={{
             scale: phase === 'in' ? 1.4 : 0.8,
             opacity: phase === 'in' ? 0.3 : 0.1,
-<<<<<<< HEAD
             y: 0,
-=======
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
           }}
           transition={{
             duration: phase === 'in' ? durationIn : durationOut,
             ease: "easeInOut",
           }}
-<<<<<<< HEAD
           style={{ position: 'absolute', top: '50%', left: '50%', x: '-50%', y: 0 }}
           className="w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] rounded-full bg-accent-sage blur-3xl"
         />
@@ -147,15 +69,6 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
           animate={{
             scale: phase === 'in' ? 1.2 : 0.9,
             y: 0,
-=======
-          className="absolute w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] rounded-full bg-accent-sage blur-3xl"
-        />
-        
-        {/* Main Circle */}
-        <motion.div
-          animate={{
-            scale: phase === 'in' ? 1.2 : 0.9,
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
             backgroundColor: phase === 'in' ? 'rgba(163, 177, 138, 0.6)' : 'rgba(163, 177, 138, 0.2)',
             borderColor: phase === 'in' ? 'rgba(212, 163, 115, 0.4)' : 'rgba(212, 163, 115, 0.1)',
           }}
@@ -166,16 +79,9 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
           className="w-[50vw] h-[50vw] max-w-[220px] max-h-[220px] rounded-full border-2 flex items-center justify-center relative z-10"
         >
           <div className="relative flex items-center justify-center">
-<<<<<<< HEAD
             {/* Inner Halo - opacity only, no scale jitter */}
             <motion.div
               animate={{
-=======
-            {/* Inner Pulsing Halo */}
-            <motion.div
-              animate={{
-                scale: phase === 'in' ? [1, 1.2, 1] : [1, 0.9, 1],
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
                 opacity: phase === 'in' ? [0.2, 0.5, 0.2] : [0.2, 0.1, 0.2],
               }}
               transition={{
@@ -185,36 +91,11 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
               }}
               className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-accent-sage/30 blur-xl"
             />
-<<<<<<< HEAD
 
             <motion.div
               animate={{ opacity: [0.7, 1, 0.7] }}
               transition={{
                 duration: phase === 'in' ? durationIn / 2 : durationOut / 2,
-=======
-            
-            {/* Ripple Effect */}
-            <AnimatePresence>
-              {phase === 'in' && (
-                <motion.div
-                  key="ripple"
-                  initial={{ scale: 0.8, opacity: 0.5 }}
-                  animate={{ scale: 1.5, opacity: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: durationIn, ease: "easeOut" }}
-                  className="absolute w-20 h-20 sm:w-28 sm:h-28 rounded-full border border-accent-sage/40"
-                />
-              )}
-            </AnimatePresence>
-
-            <motion.div 
-              animate={{ 
-                opacity: [0.7, 1, 0.7],
-                scale: phase === 'in' ? [1, 1.05, 1] : [1, 0.95, 1]
-              }}
-              transition={{ 
-                duration: phase === 'in' ? durationIn / 2 : durationOut / 2, 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
                 repeat: Infinity,
                 ease: "easeInOut"
               }}
@@ -297,7 +178,6 @@ const EmergencyMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   );
 };
 
-<<<<<<< HEAD
 const noiseOptions = [
   { id: 'rain', name: '雨声', icon: <CloudRain className="w-4 h-4" />, url: '/audio/rain.mp3' },
   { id: 'waves', name: '海浪', icon: <Waves className="w-4 h-4" />, url: '/audio/waves.mp3' },
@@ -337,30 +217,14 @@ const NoiseSelector = ({ selectedNoise, isMuted, onSelectNoise, onToggleMute }: 
 const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   const [phase, setPhase] = useState<'selection' | 'preparation' | 'induction' | 'occupation'>('selection');
   const [timer, setTimer] = useState(1800);
-=======
-const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
-  const [phase, setPhase] = useState<'selection' | 'preparation' | 'induction' | 'occupation'>('selection');
-  const [timer, setTimer] = useState(1800); 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
   const [totalTime, setTotalTime] = useState(1800);
   const [countdown, setCountdown] = useState(10);
   const [occupationIndex, setOccupationIndex] = useState(0);
   const [selectedNoise, setSelectedNoise] = useState<string | null>('rain');
   const [isMuted, setIsMuted] = useState(false);
-<<<<<<< HEAD
   const [isDimming, setIsDimming] = useState(false);
   const dimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const guidanceStartedRef = useRef(false);
-=======
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-
-  const noiseOptions = [
-    { id: 'rain', name: '雨声', icon: <CloudRain className="w-4 h-4" />, url: 'https://actions.google.com/sounds/v1/weather/rain_heavy_loud.ogg' },
-    { id: 'waves', name: '海浪', icon: <Waves className="w-4 h-4" />, url: 'https://actions.google.com/sounds/v1/water/ocean_waves.ogg' },
-    { id: 'forest', name: '森林', icon: <Trees className="w-4 h-4" />, url: 'https://actions.google.com/sounds/v1/nature/forest_ambience.ogg' },
-    { id: 'white', name: '白噪', icon: <Wind className="w-4 h-4" />, url: 'https://actions.google.com/sounds/v1/science_fiction/white_noise.ogg' },
-  ];
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
 
   const timeOptions = [
     { label: '5 min', value: 300 },
@@ -378,34 +242,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
   const inductionDuration = getInductionDuration(totalTime);
 
-<<<<<<< HEAD
-=======
-  const NoiseSelector = () => (
-    <div className="flex items-center space-x-4 bg-accent-rose/5 backdrop-blur-md px-4 py-2 rounded-full border border-accent-rose/10 soft-shadow mt-2">
-      {noiseOptions.map(noise => (
-        <button
-          key={noise.id}
-          onClick={() => {
-            setSelectedNoise(noise.id);
-            setIsMuted(false);
-          }}
-          className={`p-1.5 rounded-full transition-all ${selectedNoise === noise.id && !isMuted ? 'bg-accent-rose text-bg-deep scale-110 shadow-sm' : 'text-accent-rose/40 hover:text-accent-rose/60'}`}
-          title={noise.name}
-        >
-          {noise.icon}
-        </button>
-      ))}
-      <div className="w-px h-3 bg-accent-rose/10 mx-1" />
-      <button
-        onClick={() => setIsMuted(!isMuted)}
-        className={`p-1.5 rounded-full transition-all ${isMuted ? 'text-accent-rose' : 'text-accent-rose/40'}`}
-      >
-        {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-      </button>
-    </div>
-  );
-  
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
   const occupationPrompts = [
     "从 100 开始倒数，每次减 3...",
     "想象一个房间，从门把手的触感开始...",
@@ -434,22 +270,8 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     };
   }, [selectedNoise, isMuted, phase]);
 
-<<<<<<< HEAD
 
 
-=======
-  // Voice Guidance Script
-  useEffect(() => {
-    if (!isVoiceEnabled) return;
-    if (phase === 'preparation') {
-      playTTS("请放下手机，找一个最舒服的姿势躺好。闭上眼睛，感受身体的重量沉入床垫。屏幕即将变暗，引导即将开始。");
-    } else if (phase === 'induction') {
-      playTTS("现在，跟随圆环的节奏。吸气……呼气……让呼吸变得深长。我们会从十开始倒数，每一步都让你更接近梦境。");
-    } else if (phase === 'occupation') {
-      playTTS("现在，让大脑停靠。想象你正漫步在云端，每一步都轻盈无声。或者，尝试从一百开始倒数，每次减三。");
-    }
-  }, [phase, isVoiceEnabled]);
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
 
   useEffect(() => {
     let interval: any;
@@ -482,7 +304,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     }
   }, [phase, countdown, inductionDuration]);
 
-<<<<<<< HEAD
   // Screen dimming + touch restore — 连贯跨 phase，不在 step 切换时重置亮度
   useEffect(() => {
     if (phase === 'selection') {
@@ -512,8 +333,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     };
   }, [phase]);
 
-=======
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
   // Step 3 Occupation rotation
   useEffect(() => {
     if (phase === 'occupation') {
@@ -532,7 +351,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   };
 
   return (
-<<<<<<< HEAD
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -551,34 +369,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
       {/* 修复：引导 step 标题位置对齐 */}
       <div className={`flex-1 w-full flex justify-center ${phase === 'selection' ? 'items-center' : 'items-start pt-12 sm:pt-20'}`}>
-=======
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }} 
-      exit={{ opacity: 0 }}
-      transition={{ duration: 3, ease: "easeInOut" }}
-      className="flex flex-col items-center justify-center h-full overflow-hidden font-serif"
-    >
-      {/* Voice Status Indicator with Toggle */}
-      <div className="fixed top-12 flex items-center space-x-4 z-50">
-        <div className="flex items-center space-x-2 text-accent-rose/60 text-[10px] tracking-widest uppercase font-light">
-          <div className={`w-1.5 h-1.5 rounded-full ${isVoiceEnabled ? 'bg-accent-sage animate-pulse' : 'bg-accent-rose/30'}`} />
-          <span>{isVoiceEnabled ? '语音引导已开启' : '语音引导已关闭'}</span>
-        </div>
-        
-        <button 
-          onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
-          className={`w-10 h-5 rounded-full relative transition-colors duration-500 ${isVoiceEnabled ? 'bg-accent-sage/40' : 'bg-accent-rose/20'}`}
-        >
-          <motion.div 
-            animate={{ x: isVoiceEnabled ? 22 : 2 }}
-            transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            className="absolute top-1 w-3 h-3 bg-white rounded-full soft-shadow"
-          />
-        </button>
-      </div>
-
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
       {/* Step 0: Time Selection */}
       <AnimatePresence mode="wait">
         {phase === 'selection' && (
@@ -630,7 +420,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
             transition={{ duration: 2 }}
             className="text-center space-y-6 sm:space-y-8"
           >
-<<<<<<< HEAD
             {/* 修复：Step 1 标题去除闪烁，与 Step 2/3 行为一致 */}
             <div className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase">
               Step 1: 准备入睡
@@ -638,16 +427,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
             <div className="flex justify-center">
               <NoiseSelector selectedNoise={selectedNoise} isMuted={isMuted} onSelectNoise={(id) => { setSelectedNoise(id); setIsMuted(false); }} onToggleMute={() => setIsMuted(m => !m)} />
             </div>
-=======
-            <motion.div 
-              animate={{ opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 5, repeat: Infinity }}
-              className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase"
-            >
-              Step 1: 准备入睡
-            </motion.div>
-            <NoiseSelector />
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
             <h2 className="text-2xl sm:text-3xl font-light text-accent-rose leading-relaxed px-4 drop-shadow-sm">
               请放下手机，<br />
               找一个最舒服的姿势躺好。
@@ -658,17 +437,12 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
         {/* Step 2: Single-thread Guidance (Breathing & Countdown) */}
         {phase === 'induction' && (
-<<<<<<< HEAD
           <motion.div
-=======
-          <motion.div 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
             key="induction"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 2 }}
-<<<<<<< HEAD
             className="flex flex-col items-center space-y-6 sm:space-y-8 w-full"
           >
             {/* 总计时移到最顶部 */}
@@ -680,16 +454,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
               <div className="flex space-x-1">
                 {[1, 2, 3].map(i => (
                   <motion.div
-=======
-            className="flex flex-col items-center space-y-12 sm:space-y-16"
-          >
-            <div className="flex flex-col items-center space-y-4">
-              <div className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase">Step 2: 呼吸与沉降</div>
-              <NoiseSelector />
-              <div className="flex space-x-1">
-                {[1, 2, 3].map(i => (
-                  <motion.div 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
                     key={i}
                     animate={{ height: [4, 12, 4] }}
                     transition={{ duration: 2, repeat: Infinity, delay: i * 0.4 }}
@@ -698,7 +462,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
                 ))}
               </div>
             </div>
-<<<<<<< HEAD
 
             {/* 10s 倒计时上移到圆球上方 */}
             <motion.div
@@ -713,11 +476,6 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
             <div className="relative w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] flex items-center justify-center">
               <motion.div
-=======
-            
-            <div className="relative w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] flex items-center justify-center">
-              <motion.div 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
                 animate={{ scale: [1, 1.3, 1], opacity: [0.05, 0.15, 0.05] }}
                 transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute inset-0 rounded-full bg-accent-sage/20 blur-[80px] sm:blur-[100px]"
@@ -725,25 +483,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
               <BreathingCircle durationIn={4} durationOut={6} />
             </div>
 
-<<<<<<< HEAD
             <p className="text-white font-medium text-sm sm:text-base tracking-[0.1em] uppercase drop-shadow-sm">跟随圆环，缓慢呼吸</p>
-=======
-            <div className="text-center space-y-4">
-              <motion.div 
-                key={countdown}
-                initial={{ opacity: 0, scale: 1.3 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 1.5 }}
-                className="text-5xl sm:text-6xl font-light text-accent-rose/60"
-              >
-                {countdown > 0 ? countdown : ""}
-              </motion.div>
-              <div className="flex flex-col items-center space-y-2">
-                <p className="text-white font-medium text-sm sm:text-base tracking-[0.1em] uppercase drop-shadow-sm">跟随圆环，缓慢呼吸</p>
-                <p className="text-accent-rose/60 text-xs font-medium tracking-widest">{formatTime(timer)}</p>
-              </div>
-            </div>
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
           </motion.div>
         )}
 
@@ -759,11 +499,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
           >
             <div className="flex flex-col items-center">
               <div className="text-accent-rose/60 text-sm sm:text-base tracking-[0.4em] uppercase font-medium">Step 3: 认知占用</div>
-<<<<<<< HEAD
               <NoiseSelector selectedNoise={selectedNoise} isMuted={isMuted} onSelectNoise={(id) => { setSelectedNoise(id); setIsMuted(false); }} onToggleMute={() => setIsMuted(m => !m)} />
-=======
-              <NoiseSelector />
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
             </div>
             
             <div className="min-h-[100px] sm:min-h-[120px] flex items-center justify-center px-4 sm:px-6">
@@ -794,21 +530,10 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
           </motion.div>
         )}
       </AnimatePresence>
-<<<<<<< HEAD
       </div>
 
       {phase !== 'selection' && (
         <button
-=======
-
-      {/* Global White Noise Selector (Visible during all guidance steps) */}
-      {/* Removed from fixed position to be integrated into steps */}
-
-      {/* Step 4: Auto-close is handled by the timer useEffect */}
-      
-      {phase !== 'selection' && (
-        <button 
->>>>>>> 33077ab26f887affe0cde14dc99699bca98b841e
           onClick={onBack}
           className="fixed bottom-6 sm:bottom-10 text-accent-rose font-medium text-sm sm:text-base tracking-[0.5em] uppercase border border-accent-rose/40 px-10 sm:px-12 py-4 rounded-full hover:bg-accent-rose/10 transition-all bg-bg-deep/40 backdrop-blur-md shadow-lg z-50"
         >
