@@ -33,16 +33,62 @@ type AppState = 'home' | 'emergency' | 'sleep' | 'health';
 
 
 // --- Components ---
-const BreathingCircle = ({ durationIn = 4, durationOut = 6 }) => {
+const BreathingCircle = ({ durationIn = 4, durationOut = 6, voiceEnabled = true }) => {
   const [phase, setPhase] = useState<'in' | 'out'>('in');
+  // 修复：用 ref 跟踪 phase，让 setTimeout 链无需依赖 phase state 即可读到最新值
+  const phaseRef = useRef<'in' | 'out'>('in');
 
+  // 【新增】用 ref 缓存 Audio 实例，避免每次 phase 切换都重新 new Audio
+  const inhaleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const exhaleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 【新增】组件挂载时初始化两个 Audio 实例；卸载时停止播放并释放资源
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPhase(p => p === 'in' ? 'out' : 'in');
-    }, phase === 'in' ? durationIn * 1000 : durationOut * 1000);
-    
-    return () => clearInterval(interval);
-  }, [phase, durationIn, durationOut]);
+    inhaleAudioRef.current = new Audio('/audio/inhale.mp3');
+    exhaleAudioRef.current = new Audio('/audio/exhale.mp3');
+    return () => {
+      inhaleAudioRef.current?.pause();
+      if (inhaleAudioRef.current) inhaleAudioRef.current.src = '';
+      exhaleAudioRef.current?.pause();
+      if (exhaleAudioRef.current) exhaleAudioRef.current.src = '';
+    };
+  }, []);
+
+  // 【新增】phase 变化时播放对应语音；voiceEnabled=false 时停止所有语音
+  useEffect(() => {
+    if (!voiceEnabled) {
+      inhaleAudioRef.current?.pause();
+      exhaleAudioRef.current?.pause();
+      return;
+    }
+    const audio = phase === 'in' ? inhaleAudioRef.current : exhaleAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    // 忽略浏览器自动播放策略拦截（用户首次交互前可能被阻止）
+    audio.play().catch(() => {});
+  }, [phase, voiceEnabled]);
+
+  // 修复：自调度 setTimeout 链，phase 不再进依赖数组
+  // 原来用 setInterval+依赖phase，每次 phase 变化都 clearInterval→重建，
+  // 导致计时归零；现在用 phaseRef 在 callback 里读最新 phase，
+  // effect 只在 durationIn/durationOut 变化时重建，timer 不会被 phase 切换打断
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const schedule = () => {
+      const duration = phaseRef.current === 'in' ? durationIn * 1000 : durationOut * 1000;
+      timeoutId = setTimeout(() => {
+        const next: 'in' | 'out' = phaseRef.current === 'in' ? 'out' : 'in';
+        phaseRef.current = next; // 先更新 ref，schedule() 立即能读到正确的下一段时长
+        setPhase(next);          // 再触发 React 重渲染
+        schedule();              // 自调度下一轮
+      }, duration);
+    };
+
+    schedule();
+    return () => clearTimeout(timeoutId); // 卸载或 duration 变化时清理整条链
+  }, [durationIn, durationOut]); // 不含 phase：phase 变化不重建 timer
 
   return (
     <div className="flex flex-col items-center justify-center space-y-8 sm:space-y-10">
@@ -185,34 +231,93 @@ const noiseOptions = [
   { id: 'white', name: '白噪', icon: <Wind className="w-4 h-4" />, url: '/audio/white.mp3' },
 ];
 
+// 混合器改造：每条激活的白噪音携带独立音量
+type ActiveNoise = { id: string; volume: number };
+
+// 混合器改造：NoiseSelector 改为多选 + 独立音量滑块
 interface NoiseSelectorProps {
-  selectedNoise: string | null;
+  activeNoises: ActiveNoise[];
   isMuted: boolean;
-  onSelectNoise: (id: string) => void;
+  onToggleNoise: (id: string) => void;
+  onSetVolume: (id: string, volume: number) => void;
   onToggleMute: () => void;
+  maxActive?: number;
 }
 
-const NoiseSelector = ({ selectedNoise, isMuted, onSelectNoise, onToggleMute }: NoiseSelectorProps) => (
-  <div className="flex items-center space-x-4 bg-accent-rose/5 backdrop-blur-md px-4 py-2 rounded-full border border-accent-rose/10 soft-shadow mt-2">
-    {noiseOptions.map(noise => (
-      <button
-        key={noise.id}
-        onClick={() => onSelectNoise(noise.id)}
-        className={`p-1.5 rounded-full transition-all ${selectedNoise === noise.id && !isMuted ? 'bg-accent-rose text-bg-deep scale-110 shadow-sm' : 'text-accent-rose/40 hover:text-accent-rose/60'}`}
-        title={noise.name}
-      >
-        {noise.icon}
-      </button>
-    ))}
-    <div className="w-px h-3 bg-accent-rose/10 mx-1" />
-    <button
-      onClick={onToggleMute}
-      className={`p-1.5 rounded-full transition-all ${isMuted ? 'text-accent-rose' : 'text-accent-rose/40'}`}
-    >
-      {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-    </button>
-  </div>
-);
+const NoiseSelector = ({
+  activeNoises,
+  isMuted,
+  onToggleNoise,
+  onSetVolume,
+  onToggleMute,
+  maxActive = 3,
+}: NoiseSelectorProps) => {
+  const activeIds = new Set(activeNoises.map(n => n.id));
+  const atMax = activeNoises.length >= maxActive;
+
+  return (
+    <div className="flex flex-col items-center space-y-2 mt-2">
+      {/* 选项图标行，结构与原版保持一致 */}
+      <div className="flex items-center space-x-4 bg-accent-rose/5 backdrop-blur-md px-4 py-2 rounded-full border border-accent-rose/10 soft-shadow">
+        {noiseOptions.map(noise => {
+          const isActive = activeIds.has(noise.id);
+          const disabled = !isActive && atMax;
+          return (
+            <button
+              key={noise.id}
+              onClick={() => onToggleNoise(noise.id)}
+              disabled={disabled}
+              className={`p-1.5 rounded-full transition-all ${
+                isActive && !isMuted
+                  ? 'bg-accent-rose text-bg-deep scale-110 shadow-sm'
+                  : disabled
+                  ? 'text-accent-rose/20 cursor-not-allowed'
+                  : 'text-accent-rose/40 hover:text-accent-rose/60'
+              }`}
+              title={disabled ? `最多同时选 ${maxActive} 种` : noise.name}
+            >
+              {noise.icon}
+            </button>
+          );
+        })}
+        <div className="w-px h-3 bg-accent-rose/10 mx-1" />
+        <button
+          onClick={onToggleMute}
+          className={`p-1.5 rounded-full transition-all ${isMuted ? 'text-accent-rose' : 'text-accent-rose/40'}`}
+        >
+          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* 已选中的声音各自显示一行音量滑块 */}
+      {activeNoises.length > 0 && (
+        <div className="flex flex-col space-y-1.5 w-full max-w-[240px]">
+          {activeNoises.map(({ id, volume }) => {
+            const noise = noiseOptions.find(n => n.id === id);
+            if (!noise) return null;
+            return (
+              <div key={id} className="flex items-center space-x-2">
+                <span className="text-accent-rose/60 shrink-0">{noise.icon}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  onChange={e => onSetVolume(id, parseFloat(e.target.value))}
+                  className="flex-1 h-1 cursor-pointer"
+                />
+                <span className="text-[10px] text-accent-rose/40 w-7 text-right shrink-0">
+                  {Math.round(volume * 100)}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   const [phase, setPhase] = useState<'selection' | 'preparation' | 'induction' | 'occupation'>('selection');
@@ -220,11 +325,14 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   const [totalTime, setTotalTime] = useState(1800);
   const [countdown, setCountdown] = useState(10);
   const [occupationIndex, setOccupationIndex] = useState(0);
-  const [selectedNoise, setSelectedNoise] = useState<string | null>('rain');
+  // 混合器改造：多选 + 独立音量，替换原来的单选 selectedNoise
+  const [activeNoises, setActiveNoises] = useState<ActiveNoise[]>([{ id: 'rain', volume: 0.7 }]);
   const [isMuted, setIsMuted] = useState(false);
   const [isDimming, setIsDimming] = useState(false);
   const dimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const guidanceStartedRef = useRef(false);
+  // 混合器改造：用 Map 持久化所有 Audio 实例，避免每次 render 重新创建
+  const audioMapRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   const timeOptions = [
     { label: '5 min', value: 300 },
@@ -251,24 +359,50 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     "想象你在云端漫步，每一步都轻盈无声..."
   ];
 
-  // White Noise Audio Control
+  // 混合器改造：diff activeNoises/isMuted/phase，增删实例而非每次重建
   useEffect(() => {
-    const audio = new Audio();
-    audio.loop = true;
-    
-    if (selectedNoise && !isMuted && phase !== 'selection') {
-      const noise = noiseOptions.find(n => n.id === selectedNoise);
-      if (noise) {
-        audio.src = noise.url;
-        audio.play().catch(e => console.error("Audio play failed:", e));
+    const map = audioMapRef.current;
+    const activeIds = new Set(activeNoises.map(n => n.id));
+
+    // 移除已取消选中的音频
+    for (const [id, audio] of map) {
+      if (!activeIds.has(id)) {
+        audio.pause();
+        audio.src = '';
+        map.delete(id);
       }
     }
 
+    // 新增或同步现有音频
+    for (const { id, volume } of activeNoises) {
+      let audio = map.get(id);
+      if (!audio) {
+        const noise = noiseOptions.find(n => n.id === id);
+        if (!noise) continue;
+        audio = new Audio(noise.url);
+        audio.loop = true;
+        map.set(id, audio);
+      }
+      audio.volume = volume;
+      audio.muted = isMuted;
+      if (phase !== 'selection') {
+        if (audio.paused) audio.play().catch(() => {});
+      } else {
+        audio.pause();
+      }
+    }
+  }, [activeNoises, isMuted, phase]);
+
+  // 混合器改造：组件卸载时彻底清理所有音频实例
+  useEffect(() => {
     return () => {
-      audio.pause();
-      audio.src = "";
+      for (const audio of audioMapRef.current.values()) {
+        audio.pause();
+        audio.src = '';
+      }
+      audioMapRef.current.clear();
     };
-  }, [selectedNoise, isMuted, phase]);
+  }, []);
 
 
 
@@ -343,6 +477,20 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
       return () => clearInterval(interval);
     }
   }, [phase, occupationPrompts.length, totalTime]);
+
+  // 混合器改造：切换某个白噪音的选中状态（已选则移除，未选且未满则加入）
+  const handleToggleNoise = (id: string) => {
+    setActiveNoises(prev => {
+      if (prev.find(n => n.id === id)) return prev.filter(n => n.id !== id);
+      if (prev.length >= 3) return prev;
+      return [...prev, { id, volume: 0.7 }];
+    });
+  };
+
+  // 混合器改造：更新某个白噪音的音量
+  const handleSetVolume = (id: string, volume: number) => {
+    setActiveNoises(prev => prev.map(n => n.id === id ? { ...n, volume } : n));
+  };
 
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
@@ -425,7 +573,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
               Step 1: 准备入睡
             </div>
             <div className="flex justify-center">
-              <NoiseSelector selectedNoise={selectedNoise} isMuted={isMuted} onSelectNoise={(id) => { setSelectedNoise(id); setIsMuted(false); }} onToggleMute={() => setIsMuted(m => !m)} />
+              <NoiseSelector activeNoises={activeNoises} isMuted={isMuted} onToggleNoise={handleToggleNoise} onSetVolume={handleSetVolume} onToggleMute={() => setIsMuted(m => !m)} />
             </div>
             <h2 className="text-2xl sm:text-3xl font-light text-accent-rose leading-relaxed px-4 drop-shadow-sm">
               请放下手机，<br />
@@ -450,7 +598,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
             <div className="flex flex-col items-center space-y-4">
               <div className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase">Step 2: 呼吸与沉降</div>
-              <NoiseSelector selectedNoise={selectedNoise} isMuted={isMuted} onSelectNoise={(id) => { setSelectedNoise(id); setIsMuted(false); }} onToggleMute={() => setIsMuted(m => !m)} />
+              <NoiseSelector activeNoises={activeNoises} isMuted={isMuted} onToggleNoise={handleToggleNoise} onSetVolume={handleSetVolume} onToggleMute={() => setIsMuted(m => !m)} />
               <div className="flex space-x-1">
                 {[1, 2, 3].map(i => (
                   <motion.div
@@ -499,7 +647,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
           >
             <div className="flex flex-col items-center">
               <div className="text-accent-rose/60 text-sm sm:text-base tracking-[0.4em] uppercase font-medium">Step 3: 认知占用</div>
-              <NoiseSelector selectedNoise={selectedNoise} isMuted={isMuted} onSelectNoise={(id) => { setSelectedNoise(id); setIsMuted(false); }} onToggleMute={() => setIsMuted(m => !m)} />
+              <NoiseSelector activeNoises={activeNoises} isMuted={isMuted} onToggleNoise={handleToggleNoise} onSetVolume={handleSetVolume} onToggleMute={() => setIsMuted(m => !m)} />
             </div>
             
             <div className="min-h-[100px] sm:min-h-[120px] flex items-center justify-center px-4 sm:px-6">
@@ -544,9 +692,15 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   );
 };
 
-const HealthModule = ({ onBack }: { onBack: () => void; key?: string }) => {
+const HealthModule = ({ onBack, reminderEnabled, setReminderEnabled, reminderTime, setReminderTime }: {
+  onBack: () => void;
+  key?: string;
+  reminderEnabled: boolean;
+  setReminderEnabled: (v: boolean) => void;
+  reminderTime: number;
+  setReminderTime: (v: number) => void;
+}) => {
   const [activeSub, setActiveSub] = useState<'list' | 'heart' | 'neck' | 'waist'>('list');
-  const [reminderTime, setReminderTime] = useState(60);
 
   const modules = [
     { id: 'heart', title: '心脏健康', icon: <Heart className="text-accent-rose" />, desc: '压力感知与呼吸调节' },
@@ -628,8 +782,15 @@ const HealthModule = ({ onBack }: { onBack: () => void; key?: string }) => {
                   <Clock className="w-5 h-5 text-accent-sage" />
                   <h3 className="text-base sm:text-lg font-medium">久坐提醒设置</h3>
                 </div>
-                <div className="w-10 h-5 sm:w-12 sm:h-6 bg-accent-sage/40 rounded-full relative cursor-pointer">
-                  <div className="absolute right-1 top-1 w-3 h-3 sm:w-4 sm:h-4 bg-white rounded-full soft-shadow" />
+                <div
+                  onClick={() => setReminderEnabled(!reminderEnabled)}
+                  className={`w-10 h-5 sm:w-12 sm:h-6 rounded-full relative transition-colors duration-300 cursor-pointer ${reminderEnabled ? 'bg-accent-sage/40' : 'bg-text-muted/20'}`}
+                >
+                  <motion.div
+                    animate={{ x: reminderEnabled ? 20 : 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    className={`absolute left-1 top-1 w-3 h-3 sm:w-4 sm:h-4 rounded-full soft-shadow ${reminderEnabled ? 'bg-accent-sage' : 'bg-text-muted'}`}
+                  />
                 </div>
               </div>
               <div className="space-y-4">
@@ -746,6 +907,33 @@ export default function App() {
   const [antiLateNightEnabled, setAntiLateNightEnabled] = useState(false);
   const [blacklistApps, setBlacklistApps] = useState<string[]>(['抖音', '小红书', '王者荣耀', '微博']);
   const [showBlacklist, setShowBlacklist] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState(45);
+  const [showReminderAlert, setShowReminderAlert] = useState(false);
+  const [reminderSession, setReminderSession] = useState(0);
+
+  useEffect(() => {
+    if (!reminderEnabled) return;
+    const ms = reminderTime * 60 * 1000;
+    const timeout = setTimeout(() => {
+      setShowReminderAlert(true);
+      try {
+        const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = 528;
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 2);
+      } catch (e) {}
+    }, ms);
+    return () => clearTimeout(timeout);
+  }, [reminderEnabled, reminderTime, reminderSession]);
 
   const isWithinLateNightWindow = () => {
     const now = new Date();
@@ -953,9 +1141,53 @@ export default function App() {
         {state === 'health' && (
           <div className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden">
             <div className="max-w-md mx-auto h-full">
-              <HealthModule onBack={() => setState('home')} />
+              <HealthModule
+                onBack={() => setState('home')}
+                reminderEnabled={reminderEnabled}
+                setReminderEnabled={setReminderEnabled}
+                reminderTime={reminderTime}
+                setReminderTime={setReminderTime}
+              />
             </div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showReminderAlert && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-bg-deep/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="glass w-full max-w-md p-8 rounded-[40px] space-y-6 text-center"
+            >
+              <div className="w-16 h-16 rounded-full bg-accent-sage/20 flex items-center justify-center mx-auto">
+                <Activity className="w-8 h-8 text-accent-sage" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-medium text-accent-sage">该起来活动了！</h3>
+                <p className="text-sm text-text-muted leading-relaxed">
+                  已久坐 {reminderTime} 分钟，<br />
+                  站起来做几个简单的拉伸吧。
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReminderAlert(false);
+                  setReminderSession(s => s + 1);
+                }}
+                className="w-full py-4 rounded-2xl bg-accent-sage text-bg-deep font-medium tracking-widest uppercase text-sm"
+              >
+                好的，我去活动一下
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
