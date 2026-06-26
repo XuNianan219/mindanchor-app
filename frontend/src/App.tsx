@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, 
@@ -28,7 +29,9 @@ import {
   CloudRain
 } from 'lucide-react';
 import { AuthModal } from './AuthModal';
-import { getMe, getToken, type AuthUser } from './api';
+import { SleepHistoryModal } from './SleepHistoryModal';
+import { ScreenFit } from './ScreenFit';
+import { getCurrentUser, onAuthChange, addSleepRecord, type AuthUser } from './api';
 
 // --- Types ---
 type AppState = 'home' | 'emergency' | 'sleep' | 'health';
@@ -108,7 +111,7 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6, voiceEnabled = true 
             ease: "easeInOut",
           }}
           style={{ position: 'absolute', top: '50%', left: '50%', x: '-50%', y: 0 }}
-          className="w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] rounded-full bg-accent-sage blur-3xl"
+          className="w-[55vw] h-[55vw] max-w-[230px] max-h-[230px] rounded-full bg-accent-sage blur-2xl pointer-events-none"
         />
         
         {/* Main Circle */}
@@ -127,26 +130,17 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6, voiceEnabled = true 
           className="w-[50vw] h-[50vw] max-w-[220px] max-h-[220px] rounded-full border-2 flex items-center justify-center relative z-10"
         >
           <div className="relative flex items-center justify-center">
-            {/* Inner Halo - opacity only, no scale jitter */}
+            {/* Inner Halo - 跟随呼吸平滑变化，去掉无限闪烁 */}
             <motion.div
-              animate={{
-                opacity: phase === 'in' ? [0.2, 0.5, 0.2] : [0.2, 0.1, 0.2],
-              }}
-              transition={{
-                duration: phase === 'in' ? durationIn : durationOut,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-accent-sage/30 blur-xl"
+              animate={{ opacity: phase === 'in' ? 0.45 : 0.15 }}
+              transition={{ duration: phase === 'in' ? durationIn : durationOut, ease: "easeInOut" }}
+              className="absolute w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-accent-sage/30 blur-xl pointer-events-none"
             />
 
+            {/* 文字随呼吸平滑变化（透明度），并跟随圆圈整体放大缩小，不再原地闪烁 */}
             <motion.div
-              animate={{ opacity: [0.7, 1, 0.7] }}
-              transition={{
-                duration: phase === 'in' ? durationIn / 2 : durationOut / 2,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
+              animate={{ opacity: phase === 'in' ? 1 : 0.8 }}
+              transition={{ duration: phase === 'in' ? durationIn : durationOut, ease: "easeInOut" }}
               className="text-lg sm:text-xl font-light tracking-[0.2em] text-text-main relative z-20"
             >
               {phase === 'in' ? '吸气' : '呼气'}
@@ -321,7 +315,7 @@ const NoiseSelector = ({
   );
 };
 
-const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
+const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?: (durationMinutes: number, completed: boolean) => void; key?: string }) => {
   const [phase, setPhase] = useState<'selection' | 'preparation' | 'induction' | 'occupation'>('selection');
   const [timer, setTimer] = useState(1800);
   const [totalTime, setTotalTime] = useState(1800);
@@ -335,6 +329,8 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   const guidanceStartedRef = useRef(false);
   // 混合器改造：用 Map 持久化所有 Audio 实例，避免每次 render 重新创建
   const audioMapRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // 防止结束时重复保存睡眠记录（计时归零和点退出可能都触发）
+  const savedRef = useRef(false);
 
   const timeOptions = [
     { label: '5 min', value: 300 },
@@ -360,6 +356,15 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     "从 100 开始倒数：97... 94... 91...",
     "想象你在云端漫步，每一步都轻盈无声..."
   ];
+
+  // 结束并返回：先（只一次）回报本次睡眠记录，再退回首页
+  // completed=true 表示走完整个引导，false 表示中途退出
+  const finishOnce = (completed: boolean) => {
+    if (savedRef.current) return;
+    savedRef.current = true;
+    if (onSessionEnd) onSessionEnd(Math.round(totalTime / 60), completed);
+    onBack();
+  };
 
   // 混合器改造：diff activeNoises/isMuted/phase，增删实例而非每次重建
   useEffect(() => {
@@ -414,7 +419,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     if (phase !== 'selection' && timer > 0) {
       interval = setInterval(() => setTimer(t => t - 1), 1000);
     } else if (phase !== 'selection' && timer <= 0) {
-      onBack();
+      finishOnce(true); // 计时走完，算作完成
     }
     return () => clearInterval(interval);
   }, [timer, onBack, phase]);
@@ -426,10 +431,22 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
       return () => clearTimeout(timeout);
     }
     if (phase === 'induction') {
-      const timeout = setTimeout(() => setPhase('occupation'), inductionDuration * 1000); 
+      const timeout = setTimeout(() => setPhase('occupation'), inductionDuration * 1000);
       return () => clearTimeout(timeout);
     }
   }, [phase, inductionDuration]);
+
+  // 准备阶段：轻触屏幕任意位置即可立即开始引导（点"退出引导"按钮除外）
+  useEffect(() => {
+    if (phase !== 'preparation') return;
+    const startOnTap = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[data-sleep-exit]')) return; // 退出按钮不触发开始
+      setPhase('induction');
+    };
+    document.addEventListener('pointerdown', startOnTap);
+    return () => document.removeEventListener('pointerdown', startOnTap);
+  }, [phase]);
 
   // Step 2 Countdown logic
   useEffect(() => {
@@ -508,14 +525,18 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
       transition={{ duration: 3, ease: "easeInOut" }}
       className="flex flex-col items-center h-full overflow-hidden font-serif"
     >
-      {/* 渐变黑屏 overlay，触屏恢复 */}
-      <div
-        className="fixed inset-0 bg-black pointer-events-none z-40"
-        style={{
-          opacity: isDimming ? 0.85 : 0,
-          transition: isDimming ? 'opacity 12s ease-in' : 'opacity 1.5s ease-out',
-        }}
-      />
+      {/* 变暗层：用 Portal 渲染到 body，脱离缩放的"手机"框，覆盖整个窗口（含两侧），
+          整屏均匀变暗、无任何形状与边界；触屏恢复 */}
+      {createPortal(
+        <div
+          className="fixed inset-0 bg-black pointer-events-none z-[100]"
+          style={{
+            opacity: isDimming ? 0.85 : 0,
+            transition: isDimming ? 'opacity 12s ease-in' : 'opacity 1.5s ease-out',
+          }}
+        />,
+        document.body,
+      )}
 
       {/* 修复：引导 step 标题位置对齐 */}
       <div className={`flex-1 w-full flex justify-center ${phase === 'selection' ? 'items-center' : 'items-start pt-12 sm:pt-20'}`}>
@@ -581,7 +602,7 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
               请放下手机，<br />
               找一个最舒服的姿势躺好。
             </h2>
-            <p className="text-accent-rose font-medium text-sm sm:text-base">屏幕即将变暗，引导即将开始...</p>
+            <p className="text-accent-rose font-medium text-sm sm:text-base">轻触屏幕任意位置，开始引导</p>
           </motion.div>
         )}
 
@@ -593,47 +614,21 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 2 }}
-            className="flex flex-col items-center space-y-6 sm:space-y-8 w-full"
+            className="flex flex-col items-center space-y-8 sm:space-y-10 w-full"
           >
-            {/* 总计时移到最顶部 */}
+            {/* 总计时 */}
             <p className="text-accent-rose/60 text-xs font-medium tracking-widest">{formatTime(timer)}</p>
 
             <div className="flex flex-col items-center space-y-4">
               <div className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase">Step 2: 呼吸与沉降</div>
               <NoiseSelector activeNoises={activeNoises} isMuted={isMuted} onToggleNoise={handleToggleNoise} onSetVolume={handleSetVolume} onToggleMute={() => setIsMuted(m => !m)} />
-              <div className="flex space-x-1">
-                {[1, 2, 3].map(i => (
-                  <motion.div
-                    key={i}
-                    animate={{ height: [4, 12, 4] }}
-                    transition={{ duration: 2, repeat: Infinity, delay: i * 0.4 }}
-                    className="w-0.5 bg-accent-rose/40"
-                  />
-                ))}
-              </div>
             </div>
 
-            {/* 10s 倒计时上移到圆球上方 */}
-            <motion.div
-              key={countdown}
-              initial={{ opacity: 0, scale: 1.3 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1.5 }}
-              className="text-5xl sm:text-6xl font-light text-accent-rose/60"
-            >
-              {countdown > 0 ? countdown : ""}
-            </motion.div>
-
-            <div className="relative w-[60vw] h-[60vw] max-w-[260px] max-h-[260px] flex items-center justify-center">
-              <motion.div
-                animate={{ scale: [1, 1.3, 1], opacity: [0.05, 0.15, 0.05] }}
-                transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 rounded-full bg-accent-sage/20 blur-[80px] sm:blur-[100px]"
-              />
-              <BreathingCircle durationIn={4} durationOut={6} />
-            </div>
-
-            <p className="text-white font-medium text-sm sm:text-base tracking-[0.1em] uppercase drop-shadow-sm">跟随圆环，缓慢呼吸</p>
+            {/* 干净的文字引导，已移除圆圈/倒计时/跳动竖条等会抖动的元素 */}
+            <h2 className="text-2xl sm:text-3xl font-light text-accent-rose leading-relaxed px-4 text-center drop-shadow-sm">
+              闭上眼睛，<br />
+              缓缓地吸气，慢慢地呼气。
+            </h2>
           </motion.div>
         )}
 
@@ -684,8 +679,9 @@ const SleepMode = ({ onBack }: { onBack: () => void; key?: string }) => {
 
       {phase !== 'selection' && (
         <button
-          onClick={onBack}
-          className="fixed bottom-6 sm:bottom-10 text-accent-rose font-medium text-sm sm:text-base tracking-[0.5em] uppercase border border-accent-rose/40 px-10 sm:px-12 py-4 rounded-full hover:bg-accent-rose/10 transition-all bg-bg-deep/40 backdrop-blur-md shadow-lg z-50"
+          data-sleep-exit
+          onClick={() => finishOnce(false)}
+          className="fixed bottom-6 sm:bottom-10 text-accent-rose font-medium text-sm sm:text-base tracking-[0.5em] uppercase border border-accent-rose/40 px-10 sm:px-12 py-4 rounded-full hover:bg-accent-rose/10 transition-all bg-bg-deep/40 backdrop-blur-md shadow-lg z-[110]"
         >
           退出引导
         </button>
@@ -916,12 +912,13 @@ export default function App() {
   // 账号系统：当前登录用户 + 登录弹窗开关
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [showAuth, setShowAuth] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
-  // 进入页面时，若本地有 token 就拉一次当前用户信息（保持登录态）
+  // 进入页面时读取一次 Supabase 登录态，并订阅后续登录/退出变化
   useEffect(() => {
-    if (getToken()) {
-      getMe().then(setAuthUser).catch(() => {});
-    }
+    getCurrentUser().then(setAuthUser).catch(() => {});
+    const unsubscribe = onAuthChange(setAuthUser);
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -962,7 +959,8 @@ export default function App() {
   }, [isDarkMode]);
 
   return (
-    <div className="min-h-screen bg-bg-deep text-text-main font-sans selection:bg-accent-sage/20 overflow-x-hidden transition-colors duration-700 p-6 sm:p-8 flex flex-col items-center justify-center">
+    <ScreenFit>
+    <div className="min-h-[800px] w-full bg-bg-deep text-text-main font-sans selection:bg-accent-sage/20 overflow-x-hidden transition-colors duration-700 p-6 sm:p-8 flex flex-col items-center justify-center">
       {/* Hero Section */}
       <main className="w-full max-w-md flex-1 flex flex-col justify-center space-y-4 sm:space-y-6 pb-5">
         <motion.section 
@@ -978,7 +976,7 @@ export default function App() {
             </h1>
             <button
               onClick={() => setShowAuth(true)}
-              title={authUser ? (authUser.nickname || authUser.account) : '登录 / 注册'}
+              title={authUser ? (authUser.nickname || authUser.email) : '登录 / 注册'}
               className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-bg-card flex items-center justify-center soft-shadow border border-accent-rose/10 hover:border-accent-rose/30 transition-all shrink-0 relative"
             >
               <User className="w-6 h-6 sm:w-7 sm:h-7 text-accent-rose" />
@@ -1147,22 +1145,51 @@ export default function App() {
 
       <AnimatePresence mode="wait">
         {state === 'emergency' && (
-          <div className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden">
-            <div className="max-w-md mx-auto h-full">
+          <motion.div
+            key="emergency-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease: 'easeInOut' }}
+            className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
+          >
+            <div className="max-w-md mx-auto min-h-full">
               <EmergencyMode onBack={() => setState('home')} />
             </div>
-          </div>
+          </motion.div>
         )}
         {state === 'sleep' && (
-          <div className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden">
-            <div className="max-w-md mx-auto h-full">
-              <SleepMode onBack={() => setState('home')} />
+          <motion.div
+            key="sleep-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease: 'easeInOut' }}
+            className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
+          >
+            <div className="max-w-md mx-auto min-h-full">
+              <SleepMode
+                onBack={() => setState('home')}
+                onSessionEnd={(durationMinutes, completed) => {
+                  // 仅登录用户才保存；失败静默忽略，不打扰睡眠流程
+                  if (authUser) {
+                    addSleepRecord({ durationMinutes, completed }).catch(() => {});
+                  }
+                }}
+              />
             </div>
-          </div>
+          </motion.div>
         )}
         {state === 'health' && (
-          <div className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden">
-            <div className="max-w-md mx-auto h-full">
+          <motion.div
+            key="health-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease: 'easeInOut' }}
+            className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
+          >
+            <div className="max-w-md mx-auto min-h-full">
               <HealthModule
                 onBack={() => setState('home')}
                 reminderEnabled={reminderEnabled}
@@ -1171,7 +1198,7 @@ export default function App() {
                 setReminderTime={setReminderTime}
               />
             </div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -1223,7 +1250,15 @@ export default function App() {
           setShowAuth(false);
         }}
         onLogout={() => setAuthUser(null)}
+        onOpenHistory={() => {
+          setShowAuth(false);
+          setShowHistory(true);
+        }}
       />
+
+      {/* 睡眠记录历史弹窗 */}
+      <SleepHistoryModal open={showHistory} onClose={() => setShowHistory(false)} />
     </div>
+    </ScreenFit>
   );
 }

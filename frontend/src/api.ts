@@ -1,97 +1,141 @@
 /**
- * 后端 API 调用封装 + 登录 token 的本地保存
- * 前端各处只从这里调后端，统一管理地址、请求头和错误。
+ * 数据访问层：前端直连 Supabase
+ * - 账号：用 Supabase 自带的 Auth（不再手写认证、不再连自己的后端）
+ * - 数据：用 supabase-js 直接读写 Supabase 数据库
  */
 
-// 后端地址：默认本地 4000 端口；如需改，可在 frontend 下建 .env 写 VITE_API_BASE_URL
-const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000';
+import { supabase, isSupabaseConfigured } from './supabase';
+import type { User } from '@supabase/supabase-js';
 
-// token 存在 localStorage 里，刷新页面也不会丢
-const TOKEN_KEY = 'mindanchor_token';
+export { isSupabaseConfigured };
 
+// 前端用到的用户信息结构（从 Supabase 用户对象里挑需要的字段）
 export interface AuthUser {
   id: string;
-  account: string;
+  email: string;
   nickname: string | null;
-  createdAt: string;
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+// 把 Supabase 的原始用户对象，转成前端用的简洁结构
+function mapUser(u: User | null | undefined): AuthUser | null {
+  if (!u) return null;
+  return {
+    id: u.id,
+    email: u.email ?? '',
+    // 昵称存在用户的 metadata 里
+    nickname: (u.user_metadata?.nickname as string) ?? null,
+  };
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-// 统一的请求函数：自动带上 JSON 头和（如有）token，并统一处理错误
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
-  const res = await fetch(API_BASE + path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
-
-  // 后端正常情况下都返回 JSON
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // 把后端给的中文错误信息抛出去，组件里能直接显示
-    throw new Error((data as any).error || '请求失败，请稍后再试');
+// 未配置 Supabase 时的统一报错
+function ensureClient() {
+  if (!supabase) {
+    throw new Error('尚未配置 Supabase，请先在 frontend/.env.local 填入网址和公钥');
   }
-  return data as T;
+  return supabase;
 }
 
-// ---------- 账号相关 ----------
+// ---------- 账号（Supabase Auth）----------
 
-// 注册：成功后自动保存 token，返回用户信息
+// 注册：用邮箱+密码，昵称存进 metadata
 export async function register(
-  account: string,
+  email: string,
   password: string,
   nickname?: string,
 ): Promise<AuthUser> {
-  const data = await request<{ token: string; user: AuthUser }>(
-    '/api/auth/register',
-    {
-      method: 'POST',
-      body: JSON.stringify({ account, password, nickname }),
-    },
-  );
-  setToken(data.token);
-  return data.user;
+  const client = ensureClient();
+  const { data, error } = await client.auth.signUp({
+    email,
+    password,
+    options: { data: { nickname: nickname || null } },
+  });
+  if (error) throw new Error(error.message);
+
+  // 如果项目开启了"邮箱确认"，注册后不会立刻有登录态
+  if (!data.session) {
+    throw new Error(
+      '注册成功，请到邮箱点击确认链接后再登录（或在 Supabase 后台关闭邮箱确认）',
+    );
+  }
+  return mapUser(data.user)!;
 }
 
-// 登录：成功后自动保存 token，返回用户信息
-export async function login(
-  account: string,
-  password: string,
-): Promise<AuthUser> {
-  const data = await request<{ token: string; user: AuthUser }>(
-    '/api/auth/login',
-    {
-      method: 'POST',
-      body: JSON.stringify({ account, password }),
-    },
-  );
-  setToken(data.token);
-  return data.user;
+// 登录：邮箱+密码
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const client = ensureClient();
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(error.message);
+  return mapUser(data.user)!;
 }
 
-// 获取当前登录用户信息（需要已保存 token）
-export async function getMe(): Promise<AuthUser> {
-  const data = await request<{ user: AuthUser }>('/api/auth/me');
-  return data.user;
+// 退出登录
+export async function logout(): Promise<void> {
+  if (!supabase) return;
+  await supabase.auth.signOut();
 }
 
-// 退出登录：清掉本地 token
-export function logout(): void {
-  clearToken();
+// 获取当前登录用户（没登录或没配置则返回 null，不报错）
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getUser();
+  return mapUser(data.user);
+}
+
+// 订阅登录状态变化（登录/退出时自动回调），返回取消订阅的函数
+export function onAuthChange(cb: (user: AuthUser | null) => void): () => void {
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    cb(mapUser(session?.user));
+  });
+  return () => data.subscription.unsubscribe();
+}
+
+// ---------- 睡眠记录（直接读写 Supabase 数据库表 sleep_records）----------
+// 注意：这些函数已就绪，但前端 UI 目前还没调用它们（保持原功能不变）。
+// 需要它们生效，先在 Supabase 里建好 sleep_records 表（见最终说明里的建表 SQL）。
+
+export interface SleepRecord {
+  id: string;
+  duration_minutes: number;
+  completed: boolean;
+  note: string | null;
+  created_at: string;
+}
+
+// 新增一条睡眠记录（user_id 由数据库默认值 auth.uid() 自动填）
+export async function addSleepRecord(input: {
+  durationMinutes: number;
+  completed?: boolean;
+  note?: string;
+}): Promise<SleepRecord> {
+  const client = ensureClient();
+  const { data, error } = await client
+    .from('sleep_records')
+    .insert({
+      duration_minutes: input.durationMinutes,
+      completed: input.completed ?? false,
+      note: input.note ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as SleepRecord;
+}
+
+// 查询自己的睡眠记录（RLS 保证只看到自己的）
+export async function listSleepRecords(): Promise<SleepRecord[]> {
+  const client = ensureClient();
+  const { data, error } = await client
+    .from('sleep_records')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SleepRecord[];
+}
+
+// 删除一条睡眠记录
+export async function deleteSleepRecord(id: string): Promise<void> {
+  const client = ensureClient();
+  const { error } = await client.from('sleep_records').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }

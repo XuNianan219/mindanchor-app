@@ -1,13 +1,13 @@
 /**
- * 登录 / 注册 弹窗组件
- * 自包含：自己管表单状态、调 api、显示错误。
+ * 登录 / 注册 弹窗组件（改用 Supabase Auth）
+ * 自包含：自己管表单状态、调 Supabase、显示错误。
  * 已登录时显示当前账号 + 退出登录按钮。
  */
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, User } from 'lucide-react';
-import { login, register, logout, type AuthUser } from './api';
+import { login, register, logout, isSupabaseConfigured, type AuthUser } from './api';
 
 interface AuthModalProps {
   open: boolean;
@@ -15,21 +15,24 @@ interface AuthModalProps {
   onClose: () => void;
   onAuthed: (user: AuthUser) => void; // 登录/注册成功
   onLogout: () => void; // 退出登录
+  onOpenHistory?: () => void; // 打开睡眠记录
 }
 
-export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModalProps) {
+export function AuthModal({ open, user, onClose, onAuthed, onLogout, onOpenHistory }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [account, setAccount] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   const reset = () => {
-    setAccount('');
+    setEmail('');
     setPassword('');
     setNickname('');
     setError('');
+    setInfo('');
     setLoading(false);
   };
 
@@ -40,27 +43,34 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
 
   const handleSubmit = async () => {
     setError('');
-    if (!account || !password) {
-      setError('账号和密码不能为空');
+    setInfo('');
+    if (!email || !password) {
+      setError('邮箱和密码不能为空');
       return;
     }
     setLoading(true);
     try {
       const u =
         mode === 'login'
-          ? await login(account, password)
-          : await register(account, password, nickname || undefined);
+          ? await login(email, password)
+          : await register(email, password, nickname || undefined);
       reset();
       onAuthed(u);
     } catch (e: any) {
-      setError(e.message || '操作失败');
+      // 注册需邮箱确认时，后端会抛一条"提示性"信息，归到 info 更友好
+      const msg = e.message || '操作失败';
+      if (mode === 'register' && msg.includes('注册成功')) {
+        setInfo(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     onLogout();
   };
 
@@ -90,6 +100,12 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
               </button>
             </div>
 
+            {!isSupabaseConfigured && !user && (
+              <p className="text-sm text-accent-rose px-1 leading-relaxed">
+                尚未配置 Supabase，登录/注册暂不可用。请在 frontend/.env.local 填入网址和公钥后重启。
+              </p>
+            )}
+
             {user ? (
               // ===== 已登录状态 =====
               <div className="space-y-6">
@@ -101,9 +117,17 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
                     <div className="font-medium text-text-main truncate">
                       {user.nickname || '未设置昵称'}
                     </div>
-                    <div className="text-xs text-text-muted truncate">{user.account}</div>
+                    <div className="text-xs text-text-muted truncate">{user.email}</div>
                   </div>
                 </div>
+                {onOpenHistory && (
+                  <button
+                    onClick={onOpenHistory}
+                    className="w-full py-4 rounded-2xl bg-accent-blue/10 text-accent-blue font-medium tracking-widest uppercase text-sm border border-accent-blue/20"
+                  >
+                    我的睡眠记录
+                  </button>
+                )}
                 <button
                   onClick={handleLogout}
                   className="w-full py-4 rounded-2xl bg-accent-rose/10 text-accent-rose font-medium tracking-widest uppercase text-sm border border-accent-rose/20"
@@ -122,6 +146,7 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
                       onClick={() => {
                         setMode(m);
                         setError('');
+                        setInfo('');
                       }}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
                         mode === m ? 'bg-accent-sage text-bg-deep shadow-sm' : 'text-text-muted'
@@ -134,10 +159,10 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
 
                 <div className="space-y-3">
                   <input
-                    type="text"
-                    value={account}
-                    onChange={(e) => setAccount(e.target.value)}
-                    placeholder="账号（邮箱或手机号）"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="邮箱"
                     className="w-full px-4 py-3 rounded-2xl bg-bg-card border border-accent-rose/10 text-text-main placeholder:text-text-muted/60 focus:outline-none focus:border-accent-sage/40"
                   />
                   <input
@@ -159,10 +184,11 @@ export function AuthModal({ open, user, onClose, onAuthed, onLogout }: AuthModal
                 </div>
 
                 {error && <p className="text-sm text-accent-rose px-1">{error}</p>}
+                {info && <p className="text-sm text-accent-sage px-1 leading-relaxed">{info}</p>}
 
                 <button
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={loading || !isSupabaseConfigured}
                   className="w-full py-4 rounded-2xl bg-accent-sage text-bg-deep font-medium tracking-widest uppercase text-sm disabled:opacity-50"
                 >
                   {loading ? '请稍候...' : mode === 'login' ? '登录' : '注册'}
