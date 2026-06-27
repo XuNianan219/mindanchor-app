@@ -31,6 +31,8 @@ import {
 import { AuthModal } from './AuthModal';
 import { SleepHistoryModal } from './SleepHistoryModal';
 import { ScreenFit } from './ScreenFit';
+import { BreathingGuide } from './BreathingGuide';
+import { BreathingExercise } from './BreathingExercise';
 import { getCurrentUser, onAuthChange, addSleepRecord, type AuthUser } from './api';
 
 // --- Types ---
@@ -159,7 +161,7 @@ const BreathingCircle = ({ durationIn = 4, durationOut = 6, voiceEnabled = true 
 const EmergencyMode = ({ onBack }: { onBack: () => void; key?: string }) => {
   const [step, setStep] = useState(0);
   const steps = [
-    { title: "深呼吸", component: <BreathingCircle /> },
+    { title: "深呼吸", content: "缓缓地吸气……再慢慢地吐出来……" },
     { title: "五感法 (5-4-3-2-1)", content: "说出你看到的5个东西" },
     { title: "五感法", content: "触摸4个你身边的东西" },
     { title: "安全确认", content: "你现在是安全的，只需要呼吸。" },
@@ -200,7 +202,12 @@ const EmergencyMode = ({ onBack }: { onBack: () => void; key?: string }) => {
               transition={{ duration: 0.8, ease: "easeInOut" }}
               className="w-full"
             >
-              {steps[step].component || (
+              {step === 0 ? (
+                // 第一步：4-6 呼吸法引导（呼吸圆 + 触觉反馈 + grounding 引导语 + 柔和收尾）
+                <BreathingExercise
+                  onFinish={() => (step < steps.length - 1 ? setStep(step + 1) : onBack())}
+                />
+              ) : (
                 <p className="text-base sm:text-lg font-light leading-relaxed text-text-main/80 max-w-[280px] mx-auto">
                   {steps[step].content}
                 </p>
@@ -219,6 +226,12 @@ const EmergencyMode = ({ onBack }: { onBack: () => void; key?: string }) => {
     </motion.div>
   );
 };
+
+// 心脏健康用的 4-6 呼吸法（吸气 4 秒、呼气 6 秒）。模块级常量，保证引用稳定。
+const HEART_BREATH_PHASES = [
+  { name: '吸气', dur: 4, scale: 1 },
+  { name: '呼气', dur: 6, scale: 0.55 },
+];
 
 const noiseOptions = [
   { id: 'rain', name: '雨声', icon: <CloudRain className="w-4 h-4" />, url: '/audio/rain.mp3' },
@@ -325,6 +338,8 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
   const [activeNoises, setActiveNoises] = useState<ActiveNoise[]>([{ id: 'rain', volume: 0.7 }]);
   const [isMuted, setIsMuted] = useState(false);
   const [isDimming, setIsDimming] = useState(false);
+  // 是否启用"逐渐黑屏"（默认关闭，由用户在引导页自行开启）
+  const [dimEnabled, setDimEnabled] = useState(false);
   const dimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const guidanceStartedRef = useRef(false);
   // 混合器改造：用 Map 持久化所有 Audio 实例，避免每次 render 重新创建
@@ -459,8 +474,8 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
 
   // Screen dimming + touch restore — 连贯跨 phase，不在 step 切换时重置亮度
   useEffect(() => {
-    if (phase === 'selection') {
-      // 退回选择界面：完全重置
+    // 未开启"逐渐黑屏"或回到选择界面：不渐暗、完全重置
+    if (phase === 'selection' || !dimEnabled) {
       if (dimTimerRef.current) clearTimeout(dimTimerRef.current);
       setIsDimming(false);
       guidanceStartedRef.current = false;
@@ -484,7 +499,7 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
       // 仅移除监听，不清 dimTimer，让计时跨 phase 连续运行
       document.removeEventListener('pointerdown', restoreBrightness);
     };
-  }, [phase]);
+  }, [phase, dimEnabled]);
 
   // Step 3 Occupation rotation
   useEffect(() => {
@@ -551,7 +566,7 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
             className="text-center space-y-10 sm:space-y-12 px-6"
           >
             <div className="space-y-3">
-              <h2 className="text-2xl sm:text-3xl font-extralight text-accent-rose tracking-tight">设定入眠时长</h2>
+              <h2 className="text-3xl sm:text-4xl font-extralight text-accent-rose tracking-wide text-center">设定入眠时长</h2>
               <p className="text-text-main/60 text-xs sm:text-sm font-light tracking-widest uppercase">Select Duration</p>
             </div>
 
@@ -572,9 +587,9 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
               ))}
             </div>
 
-            <button 
+            <button
               onClick={onBack}
-              className="text-text-muted/60 text-sm sm:text-base font-light tracking-widest hover:text-text-main transition-colors mt-16"
+              className="text-text-main text-sm sm:text-base font-light tracking-widest hover:text-text-muted/60 transition-colors mt-16"
             >
               取消并返回
             </button>
@@ -616,19 +631,13 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
             transition={{ duration: 2 }}
             className="flex flex-col items-center space-y-8 sm:space-y-10 w-full"
           >
-            {/* 总计时 */}
-            <p className="text-accent-rose/60 text-xs font-medium tracking-widest">{formatTime(timer)}</p>
-
             <div className="flex flex-col items-center space-y-4">
               <div className="text-accent-rose font-medium text-sm sm:text-base tracking-[0.4em] uppercase">Step 2: 呼吸与沉降</div>
               <NoiseSelector activeNoises={activeNoises} isMuted={isMuted} onToggleNoise={handleToggleNoise} onSetVolume={handleSetVolume} onToggleMute={() => setIsMuted(m => !m)} />
             </div>
 
-            {/* 干净的文字引导，已移除圆圈/倒计时/跳动竖条等会抖动的元素 */}
-            <h2 className="text-2xl sm:text-3xl font-light text-accent-rose leading-relaxed px-4 text-center drop-shadow-sm">
-              闭上眼睛，<br />
-              缓缓地吸气，慢慢地呼气。
-            </h2>
+            {/* 呼吸引导圆圈（4-7-8，随呼吸平滑放大缩小 + 逐秒倒数） */}
+            <BreathingGuide />
           </motion.div>
         )}
 
@@ -655,22 +664,11 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 3 }}
-                  className="text-xl sm:text-2xl font-light text-white leading-relaxed italic max-w-[320px] drop-shadow-sm"
+                  className="text-2xl sm:text-3xl font-medium text-accent-rose leading-relaxed italic max-w-[320px] drop-shadow-sm"
                 >
                   "{occupationPrompts[occupationIndex]}"
                 </motion.p>
               </AnimatePresence>
-            </div>
-
-            <div className="relative">
-              <motion.div 
-                animate={{ opacity: [0.05, 0.1, 0.05] }}
-                transition={{ duration: 20, repeat: Infinity }}
-                className="w-24 h-24 sm:w-32 sm:h-32 rounded-full bg-accent-sage/5 blur-2xl"
-              />
-              <div className="absolute inset-0 flex items-center justify-center text-accent-rose/60 text-xs sm:text-sm tracking-widest font-medium">
-                {formatTime(timer)}
-              </div>
             </div>
           </motion.div>
         )}
@@ -678,13 +676,30 @@ const SleepMode = ({ onBack, onSessionEnd }: { onBack: () => void; onSessionEnd?
       </div>
 
       {phase !== 'selection' && (
-        <button
-          data-sleep-exit
-          onClick={() => finishOnce(false)}
-          className="fixed bottom-6 sm:bottom-10 text-accent-rose font-medium text-sm sm:text-base tracking-[0.5em] uppercase border border-accent-rose/40 px-10 sm:px-12 py-4 rounded-full hover:bg-accent-rose/10 transition-all bg-bg-deep/40 backdrop-blur-md shadow-lg z-[110]"
-        >
-          退出引导
-        </button>
+        <div className="fixed left-0 right-0 bottom-6 sm:bottom-10 z-[110] flex flex-col items-center gap-3 sm:gap-4 px-6 pointer-events-none">
+          {/* 逐渐黑屏开关：默认关闭，由用户决定是否渐暗 */}
+          <button
+            data-sleep-exit
+            onClick={() => setDimEnabled(v => !v)}
+            className={`pointer-events-auto text-[11px] sm:text-xs tracking-widest px-4 py-2 rounded-full border backdrop-blur-md bg-bg-deep/40 transition-all ${dimEnabled ? 'border-accent-sage/50 text-accent-sage' : 'border-accent-rose/30 text-accent-rose/70'}`}
+          >
+            逐渐黑屏：{dimEnabled ? '开' : '关'}
+          </button>
+
+          {/* 总计时（放大，位于退出按钮上方） */}
+          <p className="text-accent-rose text-3xl sm:text-4xl font-extralight tracking-[0.15em] tabular-nums drop-shadow">
+            {formatTime(timer)}
+          </p>
+
+          {/* 退出引导 */}
+          <button
+            data-sleep-exit
+            onClick={() => finishOnce(false)}
+            className="pointer-events-auto text-accent-rose font-medium text-sm sm:text-base tracking-[0.5em] uppercase border border-accent-rose/40 px-10 sm:px-12 py-4 rounded-full hover:bg-accent-rose/10 transition-all bg-bg-deep/40 backdrop-blur-md shadow-lg"
+          >
+            退出引导
+          </button>
+        </div>
       )}
     </motion.div>
   );
@@ -732,7 +747,8 @@ const HealthModule = ({ onBack, reminderEnabled, setReminderEnabled, reminderTim
             </div>
             <div className="space-y-6">
               <h3 className="text-base sm:text-lg font-medium text-center">4-6 呼吸调节法</h3>
-              <BreathingCircle durationIn={4} durationOut={6} />
+              {/* 4-6 呼吸圆圈 + 逐秒倒数（与放下手机同款风格） */}
+              <BreathingGuide phases={HEART_BREATH_PHASES} />
               <p className="text-center text-[10px] sm:text-xs text-text-muted px-4 leading-relaxed">
                 吸气 4 秒，呼气 6 秒。<br />
                 长呼气能有效激活副交感神经，降低心率。
@@ -1153,7 +1169,7 @@ export default function App() {
             transition={{ duration: 0.8, ease: 'easeInOut' }}
             className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
           >
-            <div className="max-w-md mx-auto min-h-full">
+            <div className="max-w-md mx-auto h-full">
               <EmergencyMode onBack={() => setState('home')} />
             </div>
           </motion.div>
@@ -1167,7 +1183,7 @@ export default function App() {
             transition={{ duration: 0.8, ease: 'easeInOut' }}
             className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
           >
-            <div className="max-w-md mx-auto min-h-full">
+            <div className="max-w-md mx-auto h-full">
               <SleepMode
                 onBack={() => setState('home')}
                 onSessionEnd={(durationMinutes, completed) => {
@@ -1189,7 +1205,7 @@ export default function App() {
             transition={{ duration: 0.8, ease: 'easeInOut' }}
             className="fixed inset-0 z-50 bg-bg-deep p-6 sm:p-8 overflow-x-hidden overflow-y-auto"
           >
-            <div className="max-w-md mx-auto min-h-full">
+            <div className="max-w-md mx-auto h-full">
               <HealthModule
                 onBack={() => setState('home')}
                 reminderEnabled={reminderEnabled}

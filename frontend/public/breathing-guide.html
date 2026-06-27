@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>呼吸引导</title>
+<style>
+  :root {
+    /* ============ 可调参数：呼吸节奏（秒）============ */
+    --inhale: 4s;   /* 吸气 */
+    --hold:   2s;   /* 屏息 */
+    --exhale: 4s;   /* 呼气 */
+    --pause:  2s;   /* 停顿 */
+    /* 一个完整循环 = 4+2+4+2 = 12s（自动求和，改上面四个即可） */
+    --cycle: calc(var(--inhale) + var(--hold) + var(--exhale) + var(--pause));
+
+    /* ============ 可调参数：圆圈尺寸 ============ */
+    --circle-max: min(260px, 68vw);             /* 吸气时最大直径（自适应手机） */
+    --circle-min: calc(var(--circle-max) * 0.6); /* 呼气时最小直径（= 最大的 60%） */
+
+    /* ============ 可调参数：配色（Morandi 柔和、低饱和）============ */
+    --bg-1: #e7e1d8;                     /* 背景渐变色 1（暖灰） */
+    --bg-2: #d9dadf;                     /* 背景渐变色 2（雾蓝灰） */
+    --circle-base: #a9b6a0;              /* 圆圈主色（雾绿） */
+    --circle-light: #bcc7b4;             /* 圆圈高光色（更亮一点的雾绿） */
+    --circle-glow: rgba(169,182,160,.5); /* 圆圈柔光色（半透明） */
+    --text-color: #6b6b6b;               /* 中心文字颜色 */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  /* 纯净背景：柔和的纯 CSS 渐变，无任何方框 / 边框 / 卡片 */
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, var(--bg-1), var(--bg-2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  /* 舞台：透明容器，只用来居中圆圈和文字（无背景/边框/阴影） */
+  .breath-stage {
+    position: relative;
+    width: var(--circle-max);
+    height: var(--circle-max);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 圆圈：纯 CSS 绘制（border-radius + background），无图片/SVG/mask */
+  .breath-circle {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%, var(--circle-light), var(--circle-base));
+    /* 柔光：box-shadow 均匀向四周扩散，圆形不会出现方角 */
+    box-shadow: 0 0 70px 8px var(--circle-glow);
+    /* 用 transform: scale 做缩放（性能好、不触发重排） */
+    transform: scale(.6);
+    animation: breath-scale var(--cycle) ease-in-out infinite;
+    will-change: transform;
+  }
+
+  /* 缩放节奏：吸气放大 → 屏息保持大 → 呼气缩小 → 停顿保持小
+     关键帧百分比 = 累计时长 / 总循环：4/6/10/12 → 33.33% / 50% / 83.33% / 100% */
+  @keyframes breath-scale {
+    0%     { transform: scale(.6); } /* 起点（停顿末）= 小 */
+    33.33% { transform: scale(1);  } /* 吸气结束 = 最大 */
+    50%    { transform: scale(1);  } /* 屏息：保持最大 */
+    83.33% { transform: scale(.6); } /* 呼气结束 = 最小 */
+    100%   { transform: scale(.6); } /* 停顿：保持最小 */
+  }
+
+  /* 中心文字（不随圆圈缩放，单独叠在上层） */
+  .breath-text {
+    position: relative;
+    z-index: 1;
+    color: var(--text-color);
+    font-size: 1.15rem;
+    letter-spacing: .35em;
+    font-weight: 300;
+  }
+  .breath-text span {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    opacity: 0;
+    animation: var(--cycle) ease-in-out infinite;
+  }
+  /* 每个阶段的文字，在自己的时间窗内柔和淡入淡出（与缩放同周期） */
+  .t-inhale { animation-name: fade-inhale; }
+  .t-hold   { animation-name: fade-hold; }
+  .t-exhale { animation-name: fade-exhale; }
+  .t-pause  { animation-name: fade-pause; }
+
+  @keyframes fade-inhale { 0%{opacity:0} 4%{opacity:1} 29%{opacity:1} 33%{opacity:0} 100%{opacity:0} }
+  @keyframes fade-hold   { 0%{opacity:0} 35%{opacity:0} 38%{opacity:1} 48%{opacity:1} 51%{opacity:0} 100%{opacity:0} }
+  @keyframes fade-exhale { 0%{opacity:0} 52%{opacity:0} 55%{opacity:1} 80%{opacity:1} 84%{opacity:0} 100%{opacity:0} }
+  @keyframes fade-pause  { 0%{opacity:0} 85%{opacity:0} 88%{opacity:1} 98%{opacity:1} 100%{opacity:0} }
+
+  /* 尊重用户的“减少动态效果”系统设置 */
+  @media (prefers-reduced-motion: reduce) {
+    .breath-circle, .breath-text span { animation: none; }
+    .breath-circle { transform: scale(.8); }
+  }
+</style>
+</head>
+<body>
+  <!-- 整个画面只有：背景 + 一个圆圈 + 中心文字 -->
+  <div class="breath-stage">
+    <div class="breath-circle"></div>
+    <div class="breath-text">
+      <span class="t-inhale">吸气</span>
+      <span class="t-hold">屏息</span>
+      <span class="t-exhale">呼气</span>
+      <span class="t-pause">停顿</span>
+    </div>
+  </div>
+</body>
+</html>

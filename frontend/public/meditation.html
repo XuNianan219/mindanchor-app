@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>冥想引导</title>
+<style>
+  :root {
+    /* ============ 可调：配色（Morandi 柔和、低饱和）============ */
+    --bg-1: #ccd4d8;        /* 背景渐变色 1（雾蓝） */
+    --bg-2: #ddd2d6;        /* 背景渐变色 2（藕粉） */
+    --text-color: #5c5760;  /* 字幕文字颜色（暖灰，柔和对比、不刺眼） */
+    --btn-color: #6f6a72;   /* 按钮文字颜色 */
+
+    /* ============ 可调：字幕字号 / 淡入淡出时长 ============ */
+    --subtitle-size: clamp(1.3rem, 5vw, 2rem);  /* 字幕字号（自适应） */
+    --fade: 0.6s;           /* 字幕淡入淡出时长（需与 JS 的 FADE_MS 一致） */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  /* 纯净背景：柔和 CSS 渐变，无任何方框 / 边框 / 阴影 / 图片 / mask */
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, var(--bg-1), var(--bg-2));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  /* 屏幕中央字幕：唯一的内容层，自身无背景 / 边框 / 阴影 */
+  .subtitle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem 1.5rem;
+    max-width: 640px;
+    color: var(--text-color);
+    font-size: var(--subtitle-size);
+    line-height: 1.9;
+    letter-spacing: 0.04em;
+    font-weight: 300;
+    opacity: 0;                          /* 初始隐藏，播放后淡入 */
+    transition: opacity var(--fade) ease; /* 柔和淡入淡出，绝不硬切 */
+  }
+
+  /* 开始 / 暂停按钮：柔和、无刺眼边框 */
+  .toggle {
+    margin-bottom: 12vh;
+    background: none;
+    border: none;
+    color: var(--btn-color);
+    font-size: 1rem;
+    letter-spacing: 0.4em;
+    padding: 0.6em 1.4em;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.4s ease;
+    font-family: inherit;
+  }
+  .toggle:hover { opacity: 1; }
+</style>
+</head>
+<body>
+  <!-- 画面只有两层：背景（body） + 屏幕中央字幕 -->
+  <div id="subtitle" class="subtitle"></div>
+
+  <!-- 简洁的开始 / 暂停按钮 -->
+  <button id="toggle" class="toggle">开 始</button>
+
+  <!-- 冥想引导音频（src 由 JS 注入，方便用变量替换） -->
+  <audio id="audio" preload="auto"></audio>
+
+<script>
+  /* ============================================================
+     可调参数（集中放在这里，方便修改）
+     ============================================================ */
+  const AUDIO_SRC = "./meditation.mp3"; // 你的冥想引导 mp3（与本文件放同一目录）
+  const LOOP = true;                    // true=播完自动从头循环；false=播完即停
+  const FADE_MS = 600;                  // 字幕淡入淡出时长(毫秒)，需与 CSS 的 --fade 一致
+
+  // 字幕时间轴：time = 该句开始显示的秒数，text = 字幕文字
+  // 下面是占位示例，按你的实际字幕替换文字和秒数即可（可以加任意多句）
+  const cues = [
+    { time: 0,  text: "现在，请闭上眼睛，让身体放松下来" },
+    { time: 9,  text: "想象你正坐在阿尔卑斯山脚下" },
+    { time: 18, text: "微风轻轻拂过你的脸庞" },
+    { time: 27, text: "深深吸一口气……" },
+    { time: 34, text: "再慢慢地吐出来……" },
+  ];
+
+  /* ============================================================
+     逻辑（一般无需改动）
+     ============================================================ */
+  const audio = document.getElementById("audio");
+  const subtitleEl = document.getElementById("subtitle");
+  const toggleBtn = document.getElementById("toggle");
+
+  audio.src = AUDIO_SRC;
+  audio.loop = LOOP; // 原生循环：播完自动回到开头，字幕也随之归零
+
+  let activeIndex = -1; // 当前显示的字幕序号（-1 = 未显示）
+
+  // 柔和切换字幕：先淡出 → 换字 → 再淡入
+  function showSubtitle(text) {
+    subtitleEl.style.opacity = 0;
+    setTimeout(() => {
+      subtitleEl.textContent = text;
+      subtitleEl.style.opacity = text ? 1 : 0;
+    }, FADE_MS);
+  }
+
+  // 根据当前播放时间，找出应显示的那一句（time <= 当前时间 的最后一句）
+  function currentCueIndex(t) {
+    let idx = -1;
+    for (let i = 0; i < cues.length; i++) {
+      if (t >= cues[i].time) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  // 声音念到哪一句，字幕就切到哪一句
+  audio.addEventListener("timeupdate", () => {
+    const idx = currentCueIndex(audio.currentTime);
+    if (idx !== activeIndex) {
+      activeIndex = idx;
+      showSubtitle(idx >= 0 ? cues[idx].text : "");
+    }
+  });
+
+  // 播完即停（LOOP=false 时）：复位按钮与字幕
+  audio.addEventListener("ended", () => {
+    if (!LOOP) {
+      toggleBtn.textContent = "开 始";
+      activeIndex = -1;
+      showSubtitle("");
+    }
+  });
+
+  // 开始 / 暂停：暂停时音频与字幕都停住
+  toggleBtn.addEventListener("click", () => {
+    if (audio.paused) {
+      audio.play();
+      toggleBtn.textContent = "暂 停";
+    } else {
+      audio.pause();
+      toggleBtn.textContent = "开 始";
+    }
+  });
+</script>
+</body>
+</html>

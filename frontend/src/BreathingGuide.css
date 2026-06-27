@@ -1,0 +1,63 @@
+/* 呼吸引导组件样式：纯 CSS 绘制
+   - 圆圈用 border-radius:50% + background（无图片/SVG/mask）
+   - 发光只用 box-shadow（圆形柔光，无方角；不用 filter:blur，避免缩放下的方框残留）
+   - 缩放由组件用 transform: scale() 驱动（JS 控制节奏，CSS transition 负责平滑过渡）
+   可调参数集中在 .breath-wrap 的 CSS 变量里。 */
+
+.breath-wrap {
+  /* ===== 配色（Morandi 柔和）===== */
+  --circle-max: 220px;                  /* 圆圈最大直径 */
+  --circle-base: #a9b6a0;               /* 圆圈主色（雾绿） */
+  --circle-light: #bcc7b4;              /* 圆圈高光色 */
+  --circle-glow: rgba(169, 182, 160, 0.5); /* 柔光色（半透明） */
+  --breath-text-color: #6b6b6b;         /* 中心阶段文字 */
+  --breath-count-color: #cbb89f;        /* 逐秒倒计时数字（暖色，醒目） */
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.breath-stage {
+  position: relative;
+  width: var(--circle-max);
+  height: var(--circle-max);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.breath-circle {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, var(--circle-light), var(--circle-base));
+  box-shadow: 0 0 70px 8px var(--circle-glow);
+  transform: scale(0.55);
+  will-change: transform;
+}
+
+.breath-text {
+  position: relative;
+  z-index: 1;
+  color: var(--breath-text-color);
+  font-size: 1.1rem;
+  letter-spacing: 0.35em;
+  font-weight: 300;
+  animation: breath-textfade 0.8s ease; /* 每次阶段切换柔和淡入 */
+}
+@keyframes breath-textfade { from { opacity: 0; } to { opacity: 1; } }
+
+.breath-count {
+  color: var(--breath-count-color);
+  font-size: 2.75rem;
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums; /* 数字等宽，不跳动 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breath-circle { transition: none !important; transform: scale(0.75); }
+}

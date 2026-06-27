@@ -1,0 +1,4 @@
+/* 呼吸引导内的「阶段文字 / grounding 引导语 / 收尾文字」柔和淡入
+   （每次内容切换时通过 key 重新挂载触发） */
+.bx-fade { animation: bx-fadein 0.9s ease; }
+@keyframes bx-fadein { from { opacity: 0; } to { opacity: 1; } }
